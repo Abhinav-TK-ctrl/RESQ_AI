@@ -1,0 +1,10 @@
+{
+  "name": "Remix ResQ AI",
+  "description": "AI-Powered Disaster Intelligence \u0026 Emergency Response Platform",
+  "requestFramePermissions": [
+    "geolocation"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
