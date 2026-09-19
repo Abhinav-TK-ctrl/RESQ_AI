@@ -1,10 +1,15 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
-import { MailCheck, ArrowRight, RotateCw } from 'lucide-react';
+import { MailCheck, ArrowRight, RotateCw, CheckCircle2 } from 'lucide-react';
 
 export const EmailVerificationView: React.FC = () => {
-  const { navigate, addToast, currentRole } = useApp();
+  const { navigate, addToast, currentRole, pendingVerificationEmail, currentUser, verifyUserEmail } =
+    useApp();
   const [code, setCode] = useState(['8', '0', '9', '2', '', '']);
+  const [verifying, setVerifying] = useState(false);
+
+  const displayEmail =
+    pendingVerificationEmail || currentUser?.email || 'registered.user@resq-ai.org';
 
   const handleChange = (index: number, val: string) => {
     if (val.length > 1) val = val.slice(-1);
@@ -21,12 +26,31 @@ export const EmailVerificationView: React.FC = () => {
 
   const handleVerify = (e: React.FormEvent) => {
     e.preventDefault();
-    addToast('Account Email Verified', 'Your security profile is fully active', 'success');
+    setVerifying(true);
+
+    const enteredCode = code.join('');
+    if (enteredCode.length < 4) {
+      addToast('Incomplete Code', 'Please enter the verification code', 'warning');
+      setVerifying(false);
+      return;
+    }
+
+    verifyUserEmail(displayEmail);
+    setVerifying(false);
+    addToast(
+      'Account Verified & Activated',
+      `Welcome to ResQ AI. Your address & responder profile are active.`,
+      'success'
+    );
     navigate(`/dashboard/${currentRole}`);
   };
 
   const handleResend = () => {
-    addToast('Verification Code Resent', 'New 6-digit OTP dispatched to email', 'info');
+    addToast(
+      'Verification Code Resent',
+      `New 6-digit verification code dispatched to ${displayEmail}`,
+      'info'
+    );
   };
 
   return (
@@ -40,8 +64,11 @@ export const EmailVerificationView: React.FC = () => {
           <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100 font-sans">
             Verify Email Address
           </h1>
-          <p className="text-xs text-zinc-500">
-            Enter the 6-digit verification code sent to your registered emergency address.
+          <p className="text-xs text-zinc-500 dark:text-zinc-400">
+            A 6-digit emergency verification code has been dispatched to:
+          </p>
+          <p className="text-xs font-mono font-bold text-orange-600 dark:text-orange-400 bg-orange-500/10 py-1 px-3 rounded-lg inline-block">
+            {displayEmail}
           </p>
         </div>
 
@@ -60,11 +87,16 @@ export const EmailVerificationView: React.FC = () => {
             ))}
           </div>
 
+          <div className="text-[11px] text-zinc-500">
+            Verification code preview: <span className="font-mono font-bold text-zinc-700 dark:text-zinc-300">809244</span>
+          </div>
+
           <button
             type="submit"
-            className="w-full py-3.5 rounded-xl bg-orange-600 hover:bg-orange-500 text-white font-bold text-xs uppercase font-mono tracking-wider shadow-md transition-all flex items-center justify-center gap-2"
+            disabled={verifying}
+            className="w-full py-3.5 rounded-xl bg-orange-600 hover:bg-orange-500 text-white font-bold text-xs uppercase font-mono tracking-wider shadow-md transition-all flex items-center justify-center gap-2 disabled:opacity-50"
           >
-            <span>Complete Registration</span>
+            <span>{verifying ? 'Activating Profile...' : 'Complete Verification & Enter Portal'}</span>
             <ArrowRight className="w-4 h-4" />
           </button>
         </form>

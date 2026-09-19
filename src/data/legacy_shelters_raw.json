@@ -1,0 +1,152 @@
+[
+  {
+    "id": "RAW-KL-001",
+    "shelter_name": "  St. Joseph Higher Secondary School Relief Hub  ",
+    "district": "ernakulam ",
+    "address": "Market Road, Aluva Town, Ernakulam District",
+    "contact_phone": "9447123890",
+    "latitude": 10.1076,
+    "longitude": 76.3516,
+    "capacity": 650
+  },
+  {
+    "id": "RAW-KL-002",
+    "shelter_name": "Meppadi Panchayat Community Hall",
+    "district": " WAYANAD",
+    "address": "Near Bus Stand, Meppadi, Wayanad",
+    "contact_phone": "+91-9447234567",
+    "latitude": 11.5512,
+    "longitude": 76.1245,
+    "capacity": 800
+  },
+  {
+    "id": "RAW-KL-003",
+    "shelter_name": "Munnar Tea Estate Workers Relief Camp",
+    "district": "Idukki District",
+    "address": "Old Munnar, Devikulam Taluk, Idukki",
+    "contact_phone": "09447345678",
+    "latitude": 10.0889,
+    "longitude": 77.0595,
+    "capacity": 450
+  },
+  {
+    "id": "RAW-KL-004",
+    "shelter_name": "Chalakudy Taluk Indoor Stadium Camp",
+    "district": "Thrissur",
+    "address": "Near Railway Station Road, Chalakudy, Thrissur",
+    "contact_phone": "+91 9447456789",
+    "latitude": 10.3070,
+    "longitude": 76.3330,
+    "capacity": 1100
+  },
+  {
+    "id": "RAW-KL-005",
+    "shelter_name": "Champakulam St. Marys Higher Secondary School",
+    "district": "  ALAPPUZHA ",
+    "address": "Champakulam East, Kuttanad, Alappuzha",
+    "contact_phone": "9447567890",
+    "latitude": 9.4975,
+    "longitude": 76.3420,
+    "capacity": 500
+  },
+  {
+    "id": "RAW-KL-006",
+    "shelter_name": "Perumbavoor Boys High School Relief Center",
+    "district": "Ernakulam",
+    "address": "AM Road, Perumbavoor, Ernakulam",
+    "contact_phone": "+919447678901",
+    "latitude": 10.1147,
+    "longitude": 76.4789,
+    "capacity": 750
+  },
+  {
+    "id": "RAW-KL-007",
+    "shelter_name": "Sulthan Bathery St. Peters Higher Secondary School",
+    "district": "Wayanad",
+    "address": "Kozhikode-Kollegal Highway, Sulthan Bathery, Wayanad",
+    "contact_phone": "9447789012",
+    "latitude": 11.6628,
+    "longitude": 76.2570,
+    "capacity": 900
+  },
+  {
+    "id": "RAW-KL-008",
+    "shelter_name": "Aluva Riverside Temporary Shelter (Auxiliary)",
+    "district": "Ernakulam",
+    "address": "Riverside Road, Aluva, Ernakulam",
+    "contact_phone": "+91 94471 23890",
+    "latitude": 10.1120,
+    "longitude": 76.3580,
+    "capacity": 300
+  },
+  {
+    "id": "RAW-KL-009",
+    "shelter_name": "Meppadi Youth Club Community Center",
+    "district": "Wayanad",
+    "address": "Near Main Junction, Meppadi, Wayanad",
+    "contact_phone": "+919846199887",
+    "latitude": 11.5512,
+    "longitude": 76.1245,
+    "capacity": 250
+  },
+  {
+    "id": "RAW-KL-010",
+    "shelter_name": "Devikulam Taluk Office Hall Relief Hub",
+    "district": "Idukki",
+    "address": "SH-18, Devikulam, Idukki",
+    "contact_phone": "+919447890123",
+    "latitude": null,
+    "longitude": null,
+    "capacity": 400
+  },
+  {
+    "id": "RAW-KL-011",
+    "shelter_name": "Thrissur Town Hall Relief Base",
+    "district": "Thrissur",
+    "address": "Palace Road, Thrissur Town",
+    "contact_phone": "+919447901234",
+    "latitude": 10.5276,
+    "longitude": null,
+    "capacity": 850
+  },
+  {
+    "id": "RAW-KL-012",
+    "shelter_name": "Kuttanad Emergency Boat Station Shelter",
+    "district": "Alappuzha",
+    "address": "Main Jetty, Kuttanad, Alappuzha",
+    "contact_phone": "9447-HELP-KUTTANAD",
+    "latitude": 9.4820,
+    "longitude": 76.3210,
+    "capacity": 350
+  },
+  {
+    "id": "RAW-KL-013",
+    "shelter_name": "Kaloor Indoor Sports Complex Camp",
+    "district": "Ernakulam",
+    "address": "Stadium Link Road, Kaloor, Kochi",
+    "contact_phone": "12345",
+    "latitude": 9.9980,
+    "longitude": 76.2990,
+    "capacity": 1200
+  },
+  {
+    "id": "RAW-KL-014",
+    "shelter_name": "North India Central Depository Relief Depot",
+    "district": "Ernakulam",
+    "address": "Transported Supplies Hub, New Delhi Depot",
+    "contact_phone": "+919811234567",
+    "latitude": 28.6139,
+    "longitude": 77.2090,
+    "capacity": 600
+  },
+  {
+    "id": "RAW-KL-015",
+    "shelter_name": "Offshore Fleet Emergency Vessel Point",
+    "district": "Wayanad",
+    "address": "Null Island Geographic Anomaly",
+    "contact_phone": "+919447011223",
+    "latitude": 0.0000,
+    "longitude": 0.0000,
+    "capacity": 500
+  }
+]

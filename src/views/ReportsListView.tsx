@@ -21,6 +21,9 @@ import {
   ShieldCheck,
   PhoneCall,
   AlertTriangle,
+  History,
+  CloudRain,
+  RefreshCw,
 } from 'lucide-react';
 import { formatDate } from '../lib/utils';
 import { AiAnalysisPanel } from '../components/common/AiAnalysisPanel';
@@ -28,6 +31,8 @@ import { AiAnalysisPanel } from '../components/common/AiAnalysisPanel';
 export const ReportsListView: React.FC = () => {
   const {
     incidents,
+    historicalIncidents,
+    activeIncidents,
     currentRole,
     updateIncidentStatus,
     verifyIncident,
@@ -35,11 +40,14 @@ export const ReportsListView: React.FC = () => {
     dispatchRescueSquad,
     addToast,
     navigate,
+    refreshImdData,
+    imdLoading,
   } = useApp();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedSeverity, setSelectedSeverity] = useState<string>('all');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [incidentTimelineFilter, setIncidentTimelineFilter] = useState<'all' | 'live' | 'historical'>('all');
   const [selectedIncident, setSelectedIncident] = useState<IncidentReport | null>(null);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
 
@@ -105,6 +113,13 @@ export const ReportsListView: React.FC = () => {
       }
     }
 
+    if (incidentTimelineFilter === 'live' && inc.isHistoricalArchive) {
+      return false;
+    }
+    if (incidentTimelineFilter === 'historical' && !inc.isHistoricalArchive) {
+      return false;
+    }
+
     const matchesSearch =
       inc.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
       inc.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -124,19 +139,70 @@ export const ReportsListView: React.FC = () => {
       {/* Header */}
       <div className="p-6 rounded-3xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 space-y-4 shadow-sm">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
+          <div className="space-y-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="px-2.5 py-0.5 rounded-full bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border border-cyan-500/30 text-[10px] font-mono font-bold uppercase flex items-center gap-1">
+                <Radio className="w-3 h-3 animate-pulse text-cyan-500" />
+                <span>IMD REAL-TIME TELEMETRY & DISASTER REGISTRY</span>
+              </span>
+              <button
+                onClick={() => refreshImdData()}
+                disabled={imdLoading}
+                className="px-2 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 text-zinc-600 dark:text-zinc-300 text-[10px] font-mono flex items-center gap-1"
+              >
+                <RefreshCw className={`w-3 h-3 ${imdLoading ? 'animate-spin' : ''}`} />
+                <span>Sync IMD</span>
+              </button>
+            </div>
             <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100 font-sans">
-              Public Disaster Incident Feed
+              Disaster Incidents Feed & Historical Archive
             </h1>
             <p className="text-xs text-zinc-500">
-              Live crowd-sourced & authority verified emergency incidents in Sector 1-8.
+              Real-time emergency reports and IMD verified incidents, with past Kerala disasters safely cataloged in the historical archive.
             </p>
           </div>
+
           <button
             onClick={() => navigate('/report')}
-            className="px-4 py-2.5 rounded-xl bg-orange-600 hover:bg-orange-500 text-white text-xs font-bold font-mono tracking-wider shadow"
+            className="px-4 py-2.5 rounded-xl bg-orange-600 hover:bg-orange-500 text-white text-xs font-bold font-mono tracking-wider shadow shrink-0"
           >
             + Report New Incident
+          </button>
+        </div>
+
+        {/* Timeline Tabs: All vs Live Active vs Historical Archive */}
+        <div className="flex items-center gap-2 p-1.5 rounded-2xl bg-zinc-100 dark:bg-zinc-800/80 border border-zinc-200 dark:border-zinc-700 w-fit flex-wrap">
+          <button
+            onClick={() => setIncidentTimelineFilter('all')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-mono font-bold transition-all ${
+              incidentTimelineFilter === 'all'
+                ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 shadow-sm'
+                : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900'
+            }`}
+          >
+            All Incidents ({incidents.length})
+          </button>
+          <button
+            onClick={() => setIncidentTimelineFilter('live')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-mono font-bold transition-all flex items-center gap-1.5 ${
+              incidentTimelineFilter === 'live'
+                ? 'bg-cyan-600 text-white shadow-sm'
+                : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900'
+            }`}
+          >
+            <Radio className="w-3 h-3" />
+            <span>Live Active Incidents ({activeIncidents.length})</span>
+          </button>
+          <button
+            onClick={() => setIncidentTimelineFilter('historical')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-mono font-bold transition-all flex items-center gap-1.5 ${
+              incidentTimelineFilter === 'historical'
+                ? 'bg-amber-600 text-white shadow-sm'
+                : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900'
+            }`}
+          >
+            <History className="w-3 h-3" />
+            <span>Previous Incidents Archive ({historicalIncidents.length})</span>
           </button>
         </div>
 
@@ -224,6 +290,18 @@ export const ReportsListView: React.FC = () => {
                     <span className="text-[10px] font-mono px-2.5 py-0.5 rounded-full font-bold uppercase bg-orange-500/10 text-orange-500 border border-orange-500/30">
                       {inc.category}
                     </span>
+                    {inc.isHistoricalArchive && (
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded font-bold uppercase bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/30 flex items-center gap-1">
+                        <History className="w-3 h-3 text-amber-600 dark:text-amber-400" />
+                        Archive ({inc.archiveDate || 'Past Record'})
+                      </span>
+                    )}
+                    {inc.isImdVerified && (
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded font-bold uppercase bg-cyan-500/20 text-cyan-700 dark:text-cyan-300 border border-cyan-500/30 flex items-center gap-1">
+                        <CloudRain className="w-3 h-3 text-cyan-600 dark:text-cyan-400" />
+                        IMD Verified
+                      </span>
+                    )}
                     {inc.status === 'unverified' ? (
                       <span className="text-[10px] font-mono px-2 py-0.5 rounded font-bold uppercase bg-amber-500/20 text-amber-500 border border-amber-500/40">
                         Pending Verification
@@ -336,6 +414,18 @@ export const ReportsListView: React.FC = () => {
                   <span className="text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded bg-orange-500/10 text-orange-500">
                     {inc.category}
                   </span>
+                  {inc.isHistoricalArchive && (
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded font-bold uppercase bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/30 flex items-center gap-1">
+                      <History className="w-3 h-3 text-amber-600 dark:text-amber-400" />
+                      Archive ({inc.archiveDate || 'Past'})
+                    </span>
+                  )}
+                  {inc.isImdVerified && (
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded font-bold uppercase bg-cyan-500/20 text-cyan-700 dark:text-cyan-300 border border-cyan-500/30 flex items-center gap-1">
+                      <CloudRain className="w-3 h-3 text-cyan-600 dark:text-cyan-400" />
+                      IMD Verified
+                    </span>
+                  )}
                   {inc.assignedVolunteer && (
                     <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20 flex items-center gap-1">
                       <UserCheck className="w-3 h-3" />
@@ -390,6 +480,22 @@ export const ReportsListView: React.FC = () => {
 
             <h2 className="text-xl font-bold font-sans">{selectedIncident.title}</h2>
             <p className="text-xs text-zinc-300 leading-relaxed">{selectedIncident.description}</p>
+
+            {selectedIncident.isHistoricalArchive && (
+              <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-200 text-xs flex items-start gap-2.5">
+                <History className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <p className="font-mono font-bold uppercase tracking-wider text-[10px] text-amber-300">
+                    Previous Incidents Archive Record ({selectedIncident.archiveDate || 'Past Record'})
+                  </p>
+                  {selectedIncident.archiveSignificance && (
+                    <p className="text-xs text-amber-100/90 leading-relaxed">
+                      {selectedIncident.archiveSignificance}
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Media Attachment Preview */}
             {selectedIncident.mediaUrls && selectedIncident.mediaUrls.length > 0 && (

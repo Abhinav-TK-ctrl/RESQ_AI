@@ -17,6 +17,7 @@ import {
   Clock,
   Users,
   BellRing,
+  Database,
 } from 'lucide-react';
 
 export const Sidebar: React.FC = () => {
@@ -108,6 +109,13 @@ export const Sidebar: React.FC = () => {
       path: '/resources',
       icon: Box,
       badge: null,
+    },
+    {
+      label: 'Data Migration',
+      path: '/data-migration',
+      icon: Database,
+      badge: 'ETL',
+      badgeColor: 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border-emerald-500/30',
     },
   ];
 

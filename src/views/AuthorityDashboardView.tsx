@@ -28,6 +28,7 @@ import {
   X,
   AlertTriangle,
   Edit3,
+  Database,
 } from 'lucide-react';
 import { formatDate } from '../lib/utils';
 
@@ -228,7 +229,15 @@ export const AuthorityDashboardView: React.FC = () => {
           </p>
         </div>
 
-        <div className="flex gap-3 shrink-0">
+        <div className="flex flex-wrap gap-3 shrink-0">
+          <button
+            id="btn-authority-shelter-migration"
+            onClick={() => navigate('/data-migration')}
+            className="px-4 py-3 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white font-mono font-bold text-xs uppercase tracking-wider shadow-lg shadow-emerald-950/50 transition-all flex items-center gap-2 border border-emerald-500"
+          >
+            <Database className="w-4 h-4" />
+            <span>SHELTER DATA MIGRATION</span>
+          </button>
           <button
             onClick={() => setBroadcastModal(true)}
             className="px-5 py-3 rounded-xl bg-red-600 hover:bg-red-500 text-white font-mono font-bold text-xs uppercase tracking-wider shadow-lg shadow-red-950/50 transition-all flex items-center gap-2 border border-red-500"

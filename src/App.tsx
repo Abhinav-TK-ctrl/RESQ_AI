@@ -33,6 +33,7 @@ import { NotificationsView } from './views/NotificationsView';
 import { SearchView } from './views/SearchView';
 import { SettingsView } from './views/SettingsView';
 import { AlertsView } from './views/AlertsView';
+import { DataMigrationView } from './views/DataMigrationView';
 
 const MainContent: React.FC = () => {
   const { currentPath, currentRole } = useApp();
@@ -74,6 +75,9 @@ const MainContent: React.FC = () => {
         return <SheltersView />;
       case '/alerts':
         return <AlertsView />;
+      case '/migration':
+      case '/data-migration':
+        return <DataMigrationView />;
       case '/volunteers':
         return <VolunteersView />;
       case '/profile':

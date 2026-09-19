@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 
 export const CommandPalette: React.FC = () => {
-  const { commandPaletteOpen, setCommandPaletteOpen, navigate, setRole, triggerSos, incidents, shelters } = useApp();
+  const { commandPaletteOpen, setCommandPaletteOpen, navigate, currentRole, triggerSos, incidents, shelters } = useApp();
   const [query, setQuery] = useState('');
 
   // Cmd+K listener
@@ -74,13 +74,6 @@ export const CommandPalette: React.FC = () => {
 
   const handleSelectRoute = (path: string) => {
     navigate(path);
-    setCommandPaletteOpen(false);
-    setQuery('');
-  };
-
-  const handleSwitchRole = (role: 'citizen' | 'authority') => {
-    setRole(role);
-    navigate(`/dashboard/${role}`);
     setCommandPaletteOpen(false);
     setQuery('');
   };
@@ -147,26 +140,23 @@ export const CommandPalette: React.FC = () => {
             </div>
           )}
 
-          {/* Quick Role Switcher */}
+          {/* Account Authentication */}
           {query.trim() === '' && (
             <div className="pt-2 space-y-1">
-              <div className="px-3 py-1 text-[11px] font-mono text-zinc-500 uppercase tracking-wider">
-                Switch Operating Role Perspective
+              <div className="px-3 py-1 text-[11px] font-mono text-zinc-500 uppercase tracking-wider flex items-center justify-between">
+                <span>Current Session Role</span>
+                <span className="text-zinc-300 font-bold capitalize font-mono">{currentRole}</span>
               </div>
-              <div className="grid grid-cols-2 gap-2 px-2 py-1">
-                <button
-                  onClick={() => handleSwitchRole('citizen')}
-                  className="px-3 py-2 rounded-lg bg-zinc-800/60 hover:bg-zinc-800 text-xs font-medium text-zinc-200 text-left border border-zinc-700/50"
-                >
-                  Citizen Portal
-                </button>
-                <button
-                  onClick={() => handleSwitchRole('authority')}
-                  className="px-3 py-2 rounded-lg bg-zinc-800/60 hover:bg-zinc-800 text-xs font-medium text-zinc-200 text-left border border-zinc-700/50"
-                >
-                  Authority Command
-                </button>
-              </div>
+              <button
+                onClick={() => handleSelectRoute('/login')}
+                className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs text-zinc-300 hover:bg-zinc-800 transition-colors group"
+              >
+                <div className="flex items-center gap-2">
+                  <User className="w-3.5 h-3.5 text-orange-400" />
+                  <span>Switch Account / Change Role at Login</span>
+                </div>
+                <span className="text-xs text-zinc-500 group-hover:text-orange-400">Sign In →</span>
+              </button>
             </div>
           )}
 

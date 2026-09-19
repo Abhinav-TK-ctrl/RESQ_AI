@@ -1,5 +1,20 @@
 export type UserRole = 'citizen' | 'authority';
 
+export interface UserAccount {
+  id: string;
+  email: string;
+  password: string;
+  fullName: string;
+  phone: string;
+  address: string;
+  district?: string;
+  lat?: number;
+  lng?: number;
+  role: UserRole;
+  isEmailVerified: boolean;
+  createdAt: string;
+}
+
 export type IncidentSeverity = 'critical' | 'high' | 'medium' | 'low';
 export type IncidentCategory =
   | 'flood'
@@ -36,6 +51,11 @@ export interface IncidentReport {
   severity: IncidentSeverity;
   status: IncidentStatus;
   isSosBroadcast?: boolean;
+  isHistoricalArchive?: boolean;
+  archiveDate?: string;
+  archiveCategory?: string;
+  archiveSignificance?: string;
+  isImdVerified?: boolean;
   location: {
     address: string;
     lat: number;
@@ -120,6 +140,40 @@ export interface DisasterAlert {
   lastUpdated: string;
   smsDispatchedCount?: number;
   targetedCitizensCount?: number;
+  isHistoricalArchive?: boolean;
+  archiveDate?: string;
+  isImdLiveAlert?: boolean;
+  imdWarningTypes?: string[];
+  source?: string;
+}
+
+export interface ImdDistrictWarning {
+  district: string;
+  districtId: string;
+  state: string;
+  colorCode: string; // e.g. '#FFFF00', '#FFA500', '#FF0000', '#7CFC00'
+  severity: 'Red Alert' | 'Orange Alert' | 'Yellow Alert' | 'Green (No Warning)';
+  warningTypes: string[]; // e.g. ['Heavy Rain', 'Thunderstorm & Lightning, Squall etc']
+  forecastDate: string;
+  updatedDate: string;
+  rawHtml?: string;
+  lat: number;
+  lng: number;
+  safetySummary: string;
+  source: string; // 'India Meteorological Department (IMD) - Mausam'
+}
+
+export interface ImdLiveWeather {
+  district: string;
+  temperature: number; // °C
+  apparentTemperature: number;
+  relativeHumidity: number; // %
+  precipitationMm: number; // mm
+  windSpeedKmH: number; // km/h
+  weatherCode: number;
+  weatherCondition: string;
+  lastUpdated: string;
+  source: string;
 }
 
 export interface SmsDispatchLog {
@@ -136,6 +190,7 @@ export interface SmsDispatchLog {
     address?: string;
   };
   distanceKm?: number;
+  riskTier?: 'HIGH_RISK' | 'NORMAL_RISK' | 'STATEWIDE_ALERT';
   matchReason: string;
   messageBody: string;
   nearestShelters: {

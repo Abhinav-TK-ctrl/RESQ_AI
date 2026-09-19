@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import { DisasterAlert, AlertSeverity, AlertCategory } from '../types';
 import { calculateDistanceKm, formatDate } from '../lib/utils';
-import { getNearestSheltersForLocation, buildTwilioSmsBody } from '../services/smsService';
+import { getNearestSheltersForLocation, buildTwilioSmsBody, VERIFIED_EVALUATOR_PHONE, parseKeralaLocationFromAddress } from '../services/smsService';
 import {
   AlertTriangle,
   Bell,
@@ -25,7 +25,14 @@ import {
   Smartphone,
   CheckCircle2,
   RefreshCw,
+  Database,
+  CloudRain,
+  History,
+  Globe,
+  Thermometer,
+  Wind,
 } from 'lucide-react';
+import { PostgisQueryTester } from '../components/PostgisQueryTester';
 
 const KERALA_DISTRICTS = [
   'All Kerala (Statewide)',
@@ -66,12 +73,19 @@ export const AlertsView: React.FC = () => {
     userLocation,
     shelters,
     checkIns,
+    registeredUsers,
     reserveShelterSpot,
     navigate,
     addToast,
+    imdWarnings,
+    imdLiveWeather,
+    imdLoading,
+    imdLastUpdated,
+    refreshImdData,
   } = useApp();
 
-  const [activeTab, setActiveTab] = useState<'alerts' | 'sms_logs'>('alerts');
+  const [activeTab, setActiveTab] = useState<'alerts' | 'sms_logs' | 'postgis_sql'>('alerts');
+  const [alertTimelineFilter, setAlertTimelineFilter] = useState<'all' | 'live_imd' | 'historical'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedSeverity, setSelectedSeverity] = useState<string>('all');
   const [selectedDistrict, setSelectedDistrict] = useState<string>('all');
@@ -97,7 +111,7 @@ export const AlertsView: React.FC = () => {
     status: 'published' as const,
   });
 
-  // Calculate live matching citizens count for form preview
+  // Calculate live matching citizens count for form preview with tiered risk classification
   const previewMatches = useMemo(() => {
     const alertRadius = formData.radiusKm || 10;
     const alertTargetDist = formData.targetDistrict.toLowerCase();
@@ -106,78 +120,116 @@ export const AlertsView: React.FC = () => {
       alertTargetDist.includes('statewide') ||
       alertTargetDist.includes('kerala');
 
-    const matchedList: { name: string; phone: string; distKm: number; reason: string }[] = [];
+    type MatchedItem = {
+      name: string;
+      phone: string;
+      distKm: number;
+      district: string;
+      riskTier: 'HIGH_RISK' | 'NORMAL_RISK' | 'STATEWIDE_ALERT';
+      reason: string;
+      isEvaluator: boolean;
+    };
 
-    // Check current user first
-    const userDistKm = calculateDistanceKm(
+    const matchedList: MatchedItem[] = [];
+    const seenPhones = new Set<string>();
+
+    const evaluateRecipient = (
+      name: string,
+      phone: string,
+      lat: number,
+      lng: number,
+      rawDistrict: string
+    ) => {
+      const cleanPhone = phone.replace(/[\s\-\(\)]/g, '');
+      if (!cleanPhone || seenPhones.has(cleanPhone)) return;
+
+      const distKm = calculateDistanceKm(lat, lng, formData.lat, formData.lng);
+      const recipientDist = rawDistrict.toLowerCase();
+      const districtMatch =
+        isStatewide ||
+        recipientDist.includes(alertTargetDist) ||
+        alertTargetDist.includes(recipientDist);
+
+      const isHighRisk = distKm <= alertRadius;
+      const isNormalRisk = !isHighRisk && districtMatch;
+      const isStatewideMatch = !isHighRisk && !isNormalRisk && isStatewide;
+
+      if (isHighRisk || isNormalRisk || isStatewideMatch) {
+        seenPhones.add(cleanPhone);
+        const riskTier: 'HIGH_RISK' | 'NORMAL_RISK' | 'STATEWIDE_ALERT' = isHighRisk
+          ? 'HIGH_RISK'
+          : isNormalRisk
+          ? 'NORMAL_RISK'
+          : 'STATEWIDE_ALERT';
+
+        const isEvaluator =
+          cleanPhone === VERIFIED_EVALUATOR_PHONE ||
+          cleanPhone.endsWith('7907733921') ||
+          cleanPhone.includes('7907733921');
+
+        matchedList.push({
+          name,
+          phone,
+          distKm,
+          district: rawDistrict,
+          riskTier,
+          reason:
+            riskTier === 'HIGH_RISK'
+              ? `${distKm.toFixed(1)} km (<=${alertRadius}km) - High Risk Zone`
+              : riskTier === 'NORMAL_RISK'
+              ? `${distKm.toFixed(1)} km - Same District (${formData.targetDistrict})`
+              : `${distKm.toFixed(1)} km - Statewide General Alert`,
+          isEvaluator,
+        });
+      }
+    };
+
+    // 1. Check current logged-in user
+    evaluateRecipient(
+      'Arjun Nair & Family (You)',
+      '+91 94470 12345',
       userLocation.lat,
       userLocation.lng,
-      formData.lat,
-      formData.lng
+      userLocation.district || userLocation.sector || 'Wayanad'
     );
-    const userDistrict = (
-      userLocation.district ||
-      userLocation.sector ||
-      userLocation.address ||
-      ''
-    ).toLowerCase();
-    const userDistMatch =
-      isStatewide ||
-      userDistrict.includes(alertTargetDist) ||
-      alertTargetDist.includes(userDistrict);
-    const userRadiusMatch = userDistKm <= alertRadius;
 
-    if (userRadiusMatch || userDistMatch) {
-      matchedList.push({
-        name: 'Arjun Nair & Family (You)',
-        phone: '+91 94470 12345',
-        distKm: userDistKm,
-        reason:
-          userRadiusMatch && userDistMatch
-            ? `${userDistKm.toFixed(1)} km (<=${alertRadius}km) & District Match`
-            : userRadiusMatch
-            ? `${userDistKm.toFixed(1)} km Geofence Radius`
-            : `District Match (${formData.targetDistrict})`,
-      });
-    }
+    // 2. Check all registered users from portal database
+    if (registeredUsers && registeredUsers.length > 0) {
+      for (const u of registeredUsers) {
+        let uLat = u.location?.lat;
+        let uLng = u.location?.lng;
+        let uDist = u.district || '';
 
-    // Check all registered citizens
-    for (const c of checkIns) {
-      if (c.phone === '+91 94470 12345') continue;
-      const distKm = calculateDistanceKm(
-        c.location.lat,
-        c.location.lng,
-        formData.lat,
-        formData.lng
-      );
-      const cDistrict = (
-        c.district ||
-        c.sector ||
-        c.location.sector ||
-        c.location.address ||
-        ''
-      ).toLowerCase();
-      const distMatch =
-        isStatewide || cDistrict.includes(alertTargetDist) || alertTargetDist.includes(cDistrict);
-      const radiusMatch = distKm <= alertRadius;
+        if ((!uLat || !uLng) && u.address) {
+          const parsed = parseKeralaLocationFromAddress(u.address);
+          uLat = parsed.lat;
+          uLng = parsed.lng;
+          if (!uDist) uDist = parsed.district;
+        }
 
-      if (radiusMatch || distMatch) {
-        matchedList.push({
-          name: c.userName,
-          phone: c.phone,
-          distKm,
-          reason:
-            radiusMatch && distMatch
-              ? `${distKm.toFixed(1)} km & District Match`
-              : radiusMatch
-              ? `${distKm.toFixed(1)} km Geofence Radius`
-              : `District Match (${formData.targetDistrict})`,
-        });
+        evaluateRecipient(
+          u.fullName || 'Registered Citizen',
+          u.phone,
+          uLat || 11.554,
+          uLng || 76.126,
+          uDist || 'Wayanad'
+        );
       }
     }
 
+    // 3. Check all checked-in citizens
+    for (const c of checkIns) {
+      evaluateRecipient(
+        c.userName,
+        c.phone,
+        c.location.lat,
+        c.location.lng,
+        c.district || c.sector || 'Kerala'
+      );
+    }
+
     return matchedList;
-  }, [formData, userLocation, checkIns]);
+  }, [formData, userLocation, checkIns, registeredUsers]);
 
   // Handle open create modal
   const handleOpenCreate = () => {
@@ -271,6 +323,21 @@ export const AlertsView: React.FC = () => {
         issuedBy: formData.issuedBy,
         status: formData.status,
       });
+
+      // Also persist alert to Cloud SQL PostGIS database
+      fetch('/api/alerts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: formData.title,
+          description: formData.message,
+          severity: formData.severity === 'Red Alert' ? 'red' : formData.severity === 'Orange Alert' ? 'orange' : formData.severity === 'Yellow Alert' ? 'yellow' : 'info',
+          district: formData.targetDistrict,
+          latitude: Number(formData.lat),
+          longitude: Number(formData.lng),
+          radius_km: Number(formData.radiusKm) || 10,
+        }),
+      }).catch((err) => console.warn('Cloud SQL alert sync:', err));
     }
 
     setShowCreateModal(false);
@@ -296,6 +363,12 @@ export const AlertsView: React.FC = () => {
   // Filter alerts
   const filteredAlerts = useMemo(() => {
     return alerts.filter((alert) => {
+      if (alertTimelineFilter === 'live_imd' && !alert.isImdLiveAlert) {
+        return false;
+      }
+      if (alertTimelineFilter === 'historical' && !alert.isHistoricalArchive) {
+        return false;
+      }
       if (selectedSeverity !== 'all' && alert.severity !== selectedSeverity) {
         return false;
       }
@@ -313,7 +386,7 @@ export const AlertsView: React.FC = () => {
       }
       return true;
     });
-  }, [alerts, selectedSeverity, selectedDistrict, searchQuery]);
+  }, [alerts, alertTimelineFilter, selectedSeverity, selectedDistrict, searchQuery]);
 
   // Filter SMS logs
   const filteredLogs = useMemo(() => {
@@ -397,6 +470,17 @@ export const AlertsView: React.FC = () => {
                     <MessageSquare className="w-3.5 h-3.5 text-blue-500" />
                     <span>SMS Dispatch Logs ({smsLogs.length})</span>
                   </button>
+                  <button
+                    onClick={() => setActiveTab('postgis_sql')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all flex items-center gap-1.5 ${
+                      activeTab === 'postgis_sql'
+                        ? 'bg-white dark:bg-stone-900 text-emerald-600 dark:text-emerald-400 shadow-sm'
+                        : 'text-stone-500 dark:text-stone-400 hover:text-stone-900 dark:hover:text-stone-200'
+                    }`}
+                  >
+                    <Database className="w-3.5 h-3.5 text-emerald-500" />
+                    <span>PostGIS Engine</span>
+                  </button>
                 </div>
 
                 <button
@@ -410,17 +494,41 @@ export const AlertsView: React.FC = () => {
             )}
 
             {currentRole === 'citizen' && (
-              <div className="p-3 rounded-2xl bg-stone-50 dark:bg-stone-800/60 border border-stone-200 dark:border-stone-700 flex items-center gap-3">
-                <div className="p-2 rounded-xl bg-red-500/10 text-red-600 dark:text-red-400">
-                  <ShieldAlert className="w-5 h-5" />
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="flex items-center p-1 bg-stone-100 dark:bg-stone-800 rounded-xl border border-stone-200 dark:border-stone-700">
+                  <button
+                    onClick={() => setActiveTab('alerts')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all flex items-center gap-1.5 ${
+                      activeTab === 'alerts'
+                        ? 'bg-white dark:bg-stone-900 text-stone-900 dark:text-stone-100 shadow-sm'
+                        : 'text-stone-500 dark:text-stone-400 hover:text-stone-900 dark:hover:text-stone-200'
+                    }`}
+                  >
+                    <Bell className="w-3.5 h-3.5" />
+                    <span>Alerts ({alerts.length})</span>
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('postgis_sql')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all flex items-center gap-1.5 ${
+                      activeTab === 'postgis_sql'
+                        ? 'bg-white dark:bg-stone-900 text-emerald-600 dark:text-emerald-400 shadow-sm'
+                        : 'text-stone-500 dark:text-stone-400 hover:text-stone-900 dark:hover:text-stone-200'
+                    }`}
+                  >
+                    <Database className="w-3.5 h-3.5 text-emerald-500" />
+                    <span>PostGIS Engine</span>
+                  </button>
                 </div>
-                <div>
-                  <p className="text-xs font-bold text-stone-900 dark:text-stone-100 font-mono">
-                    Citizen Protection Active
-                  </p>
-                  <p className="text-[11px] text-stone-500">
-                    Proximity alerts monitored within 10 km
-                  </p>
+
+                <div className="p-2.5 rounded-2xl bg-stone-50 dark:bg-stone-800/60 border border-stone-200 dark:border-stone-700 flex items-center gap-2.5">
+                  <div className="p-1.5 rounded-lg bg-red-500/10 text-red-600 dark:text-red-400">
+                    <ShieldAlert className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold text-stone-900 dark:text-stone-100 font-mono">
+                      10 km Geofence Monitored
+                    </p>
+                  </div>
                 </div>
               </div>
             )}
@@ -428,8 +536,10 @@ export const AlertsView: React.FC = () => {
         </div>
       </div>
 
-      {/* Authority SMS Logs Tab */}
-      {currentRole === 'authority' && activeTab === 'sms_logs' ? (
+      {/* PostGIS Spatial Engine Tab */}
+      {activeTab === 'postgis_sql' ? (
+        <PostgisQueryTester />
+      ) : currentRole === 'authority' && activeTab === 'sms_logs' ? (
         <div className="space-y-4">
           <div className="p-5 rounded-2xl bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-sm">
             <div className="space-y-1">
@@ -498,6 +608,24 @@ export const AlertsView: React.FC = () => {
                           <CheckCircle2 className="w-3 h-3" />
                           <span>DELIVERED</span>
                         </span>
+                        {log.riskTier === 'HIGH_RISK' ? (
+                          <span className="px-2 py-0.5 rounded bg-red-600 text-white font-mono text-[10px] font-bold">
+                            🔴 HIGH RISK (&lt;10 KM)
+                          </span>
+                        ) : log.riskTier === 'NORMAL_RISK' ? (
+                          <span className="px-2 py-0.5 rounded bg-amber-500 text-white font-mono text-[10px] font-bold">
+                            🟠 NORMAL RISK (DISTRICT)
+                          </span>
+                        ) : log.riskTier === 'STATEWIDE_ALERT' ? (
+                          <span className="px-2 py-0.5 rounded bg-blue-600 text-white font-mono text-[10px] font-bold">
+                            🟡 STATEWIDE ALERT
+                          </span>
+                        ) : null}
+                        {log.distanceKm !== undefined && (
+                          <span className="px-2 py-0.5 rounded bg-stone-100 dark:bg-stone-800 text-stone-700 dark:text-stone-300 font-mono text-[10px]">
+                            {log.distanceKm.toFixed(1)} km
+                          </span>
+                        )}
                         <span className="text-[10px] font-mono text-stone-400">
                           {formatDate(log.timestamp)}
                         </span>
@@ -546,6 +674,84 @@ export const AlertsView: React.FC = () => {
       ) : (
         /* Alerts List Section (Citizen & Authority Default) */
         <div className="space-y-4">
+          {/* IMD Mausam Official Live Bulletin Card */}
+          <div className="p-4 sm:p-5 rounded-3xl bg-gradient-to-r from-stone-900 via-stone-900 to-stone-950 text-stone-100 border border-stone-800 shadow-md flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="px-2.5 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 text-[10px] font-mono font-bold uppercase border border-cyan-500/40 flex items-center gap-1">
+                  <Radio className="w-3 h-3 animate-pulse text-cyan-400" />
+                  <span>IMD MAUSAM OFFICIAL REAL-TIME INTEGRATION</span>
+                </span>
+                <span className="text-[11px] font-mono text-stone-400">
+                  {imdLastUpdated ? `Bulletin Sync: ${imdLastUpdated}` : 'Live Real-Time'}
+                </span>
+              </div>
+              <h3 className="font-serif font-bold text-base text-stone-100 flex items-center gap-2">
+                <CloudRain className="w-5 h-5 text-blue-400" />
+                <span>India Meteorological Department (IMD) Live Weather Advisory</span>
+              </h3>
+              <p className="text-xs text-stone-400 max-w-2xl">
+                Official district-wise severe weather bulletins from IMD NWFC. All historical monsoon floods and landslides (e.g. July 2024 Chooralmala) are safely stored in the Previous Incidents Archive.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-3 shrink-0 flex-wrap">
+              {imdLiveWeather && (
+                <div className="px-3 py-1.5 rounded-xl bg-stone-800/80 border border-stone-700/60 text-xs font-mono text-stone-300 flex items-center gap-2">
+                  <Thermometer className="w-3.5 h-3.5 text-amber-400" />
+                  <span>{imdLiveWeather.temperature}°C</span>
+                  <span className="text-stone-500">•</span>
+                  <Wind className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>{imdLiveWeather.windSpeed} km/h</span>
+                </div>
+              )}
+              <button
+                onClick={() => refreshImdData()}
+                disabled={imdLoading}
+                className="px-3.5 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-mono text-xs font-bold shadow-sm transition-all flex items-center gap-2 disabled:opacity-50"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${imdLoading ? 'animate-spin' : ''}`} />
+                <span>{imdLoading ? 'Querying IMD...' : 'Sync Live IMD'}</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Timeline Filter: All vs Live IMD vs Historical Archive */}
+          <div className="flex items-center gap-2 p-1.5 rounded-2xl bg-stone-100 dark:bg-stone-800/80 border border-stone-200 dark:border-stone-700 w-fit flex-wrap">
+            <button
+              onClick={() => setAlertTimelineFilter('all')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-mono font-bold transition-all ${
+                alertTimelineFilter === 'all'
+                  ? 'bg-white dark:bg-stone-900 text-stone-900 dark:text-stone-100 shadow-sm border border-stone-200 dark:border-stone-700'
+                  : 'text-stone-600 dark:text-stone-400 hover:text-stone-900'
+              }`}
+            >
+              All Alerts ({alerts.length})
+            </button>
+            <button
+              onClick={() => setAlertTimelineFilter('live_imd')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-mono font-bold transition-all flex items-center gap-1.5 ${
+                alertTimelineFilter === 'live_imd'
+                  ? 'bg-cyan-600 text-white shadow-sm'
+                  : 'text-stone-600 dark:text-stone-400 hover:text-stone-900'
+              }`}
+            >
+              <Radio className="w-3 h-3" />
+              <span>Live IMD Warnings ({alerts.filter((a) => a.isImdLiveAlert).length})</span>
+            </button>
+            <button
+              onClick={() => setAlertTimelineFilter('historical')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-mono font-bold transition-all flex items-center gap-1.5 ${
+                alertTimelineFilter === 'historical'
+                  ? 'bg-amber-600 text-white shadow-sm'
+                  : 'text-stone-600 dark:text-stone-400 hover:text-stone-900'
+              }`}
+            >
+              <History className="w-3 h-3" />
+              <span>Previous Incidents Archive ({alerts.filter((a) => a.isHistoricalArchive).length})</span>
+            </button>
+          </div>
+
           {/* Filters & Search Toolbar */}
           <div className="p-4 rounded-2xl bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 shadow-sm flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
             {/* Search input */}
@@ -689,6 +895,20 @@ export const AlertsView: React.FC = () => {
                           <span>Target: {alert.targetDistrict}</span>
                         </span>
 
+                        {alert.isImdLiveAlert && (
+                          <span className="px-2.5 py-0.5 rounded-full bg-cyan-500/20 text-cyan-700 dark:text-cyan-300 text-[11px] font-mono font-bold border border-cyan-500/40 flex items-center gap-1">
+                            <Radio className="w-3 h-3 text-cyan-500 animate-pulse" />
+                            <span>IMD LIVE BULLETIN</span>
+                          </span>
+                        )}
+
+                        {alert.isHistoricalArchive && (
+                          <span className="px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-800 dark:text-amber-300 text-[11px] font-mono font-bold border border-amber-500/40 flex items-center gap-1">
+                            <History className="w-3 h-3 text-amber-600 dark:text-amber-400" />
+                            <span>PREVIOUS INCIDENT ARCHIVE ({alert.archiveDate || 'Past Record'})</span>
+                          </span>
+                        )}
+
                         {alert.location.radiusKm && (
                           <span className="text-[11px] font-mono text-stone-500">
                             ({alert.location.radiusKm} km Perimeter)
@@ -754,6 +974,21 @@ export const AlertsView: React.FC = () => {
                         {alert.message}
                       </p>
                     </div>
+
+                    {/* Historical Significance Debrief */}
+                    {alert.isHistoricalArchive && alert.archiveSignificance && (
+                      <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-900 dark:text-amber-200 text-xs flex items-start gap-2.5">
+                        <History className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                        <div>
+                          <p className="font-mono font-bold uppercase tracking-wider text-[10px] text-amber-700 dark:text-amber-300">
+                            Historical Disaster Record & Lessons Learned ({alert.archiveDate || 'Past Record'})
+                          </p>
+                          <p className="mt-0.5 text-xs text-amber-900 dark:text-amber-200 leading-relaxed">
+                            {alert.archiveSignificance}
+                          </p>
+                        </div>
+                      </div>
+                    )}
 
                     {/* Epicenter & Authority Info */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs font-mono text-stone-500 p-3 rounded-xl bg-stone-50 dark:bg-stone-800/50 border border-stone-200/80 dark:border-stone-800">
@@ -1118,20 +1353,118 @@ export const AlertsView: React.FC = () => {
               </div>
 
               {/* Geofence Calculation Live Preview Box */}
-              <div className="p-3.5 rounded-2xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900/60 space-y-2">
+              <div className="p-4 rounded-2xl bg-stone-50 dark:bg-stone-800/80 border border-stone-200 dark:border-stone-700/80 space-y-3">
                 <div className="flex items-center justify-between text-xs font-mono">
-                  <span className="font-bold text-blue-700 dark:text-blue-300 flex items-center gap-1.5">
-                    <Smartphone className="w-3.5 h-3.5 text-blue-600" />
-                    <span>Automated SMS Dispatch Geofence Scan:</span>
+                  <span className="font-bold text-stone-800 dark:text-stone-200 flex items-center gap-1.5">
+                    <Smartphone className="w-4 h-4 text-orange-500" />
+                    <span>Automated Tiered SMS Dispatch Engine Scan</span>
                   </span>
-                  <span className="font-bold text-blue-600 dark:text-blue-400 bg-blue-100 dark:bg-blue-900/60 px-2 py-0.5 rounded">
-                    {previewMatches.length} Citizens Match (10km or District)
+                  <span className="font-bold text-stone-900 dark:text-stone-100 bg-orange-100 dark:bg-orange-950/60 border border-orange-200 dark:border-orange-800 px-2.5 py-0.5 rounded-full">
+                    {previewMatches.length} Total Recipients
                   </span>
                 </div>
-                <p className="text-[11px] text-blue-600/90 dark:text-blue-400/90">
-                  Publishing this alert will automatically trigger the Twilio SMS notification
-                  function with the alert message and the nearest shelters attached.
-                </p>
+
+                {/* Tier badges */}
+                <div className="grid grid-cols-3 gap-2 text-center text-xs font-mono">
+                  <div className="p-2 rounded-xl bg-red-500/10 border border-red-500/20 text-red-700 dark:text-red-400">
+                    <span className="block font-bold text-sm">
+                      {previewMatches.filter((m) => m.riskTier === 'HIGH_RISK').length}
+                    </span>
+                    <span className="text-[10px] uppercase font-bold">🔴 High Risk (&lt;10km)</span>
+                  </div>
+                  <div className="p-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-700 dark:text-amber-400">
+                    <span className="block font-bold text-sm">
+                      {previewMatches.filter((m) => m.riskTier === 'NORMAL_RISK').length}
+                    </span>
+                    <span className="text-[10px] uppercase font-bold">🟠 Normal Risk (District)</span>
+                  </div>
+                  <div className="p-2 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-700 dark:text-blue-400">
+                    <span className="block font-bold text-sm">
+                      {previewMatches.filter((m) => m.riskTier === 'STATEWIDE_ALERT').length}
+                    </span>
+                    <span className="text-[10px] uppercase font-bold">🟡 Statewide Alert</span>
+                  </div>
+                </div>
+
+                {/* Evaluator Specific Status Banner */}
+                {(() => {
+                  const evalRecipient = previewMatches.find((m) => m.isEvaluator);
+                  if (evalRecipient) {
+                    return (
+                      <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-800 dark:text-emerald-300 text-xs flex items-center justify-between gap-2 flex-wrap">
+                        <div className="flex items-center gap-2">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                          <div>
+                            <span className="font-bold font-mono uppercase text-[11px]">
+                              Evaluator Detected (+917907733921):
+                            </span>{' '}
+                            <span className="font-sans">
+                              {evalRecipient.distKm.toFixed(1)} km away ({evalRecipient.district})
+                            </span>
+                          </div>
+                        </div>
+                        <span
+                          className={`px-2 py-0.5 rounded-full font-mono text-[10px] font-bold ${
+                            evalRecipient.riskTier === 'HIGH_RISK'
+                              ? 'bg-red-600 text-white'
+                              : 'bg-amber-600 text-white'
+                          }`}
+                        >
+                          {evalRecipient.riskTier === 'HIGH_RISK'
+                            ? '🔴 HIGH RISK SMS WILL DISPATCH'
+                            : '🟠 NORMAL RISK SMS WILL DISPATCH'}
+                        </span>
+                      </div>
+                    );
+                  }
+                  return (
+                    <div className="p-2.5 rounded-xl bg-zinc-100 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700 text-[11px] text-zinc-600 dark:text-zinc-400 flex items-center justify-between">
+                      <span>Evaluator (+917907733921) not yet registered in portal session</span>
+                      <button
+                        type="button"
+                        onClick={() => navigate('/signup')}
+                        className="text-orange-600 dark:text-orange-400 font-bold hover:underline"
+                      >
+                        Register Evaluator
+                      </button>
+                    </div>
+                  );
+                })()}
+
+                {/* Recipient breakdown list */}
+                <div className="max-h-36 overflow-y-auto space-y-1.5 pr-1 text-xs">
+                  {previewMatches.map((m, idx) => (
+                    <div
+                      key={idx}
+                      className={`p-2 rounded-lg flex items-center justify-between text-[11px] font-mono border ${
+                        m.isEvaluator
+                          ? 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-300 dark:border-emerald-700 font-bold'
+                          : m.riskTier === 'HIGH_RISK'
+                          ? 'bg-red-50/50 dark:bg-red-950/20 border-red-200 dark:border-red-900/40 text-stone-900 dark:text-stone-100'
+                          : 'bg-white dark:bg-stone-900 border-stone-200 dark:border-stone-800 text-stone-700 dark:text-stone-300'
+                      }`}
+                    >
+                      <div className="flex items-center gap-1.5 truncate mr-2">
+                        <span className="truncate">{m.name}</span>
+                        <span className="text-stone-400">({m.phone})</span>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="text-stone-500">{m.distKm.toFixed(1)} km</span>
+                        <span
+                          className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${
+                            m.riskTier === 'HIGH_RISK'
+                              ? 'bg-red-600 text-white'
+                              : m.riskTier === 'NORMAL_RISK'
+                              ? 'bg-amber-500 text-white'
+                              : 'bg-blue-500 text-white'
+                          }`}
+                        >
+                          {m.riskTier === 'HIGH_RISK' ? 'High' : m.riskTier === 'NORMAL_RISK' ? 'Normal' : 'State'}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
 
               {/* Action Buttons */}

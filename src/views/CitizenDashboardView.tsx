@@ -27,6 +27,8 @@ import { KeralaWeatherCard } from '../components/common/KeralaWeatherCard';
 export const CitizenDashboardView: React.FC = () => {
   const {
     incidents,
+    activeIncidents,
+    historicalIncidents,
     shelters,
     userLocation,
     reserveShelterSpot,
@@ -55,7 +57,7 @@ export const CitizenDashboardView: React.FC = () => {
   const nearestShelters = sortedShelters.slice(0, 3);
   const closestOpenShelter = sortedShelters.find((s) => s.status !== 'full') || sortedShelters[0];
 
-  const myReports = incidents.filter(
+  const myReports = activeIncidents.filter(
     (i) =>
       i.reporter.role === 'citizen' ||
       i.isSosBroadcast ||
